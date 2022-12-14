@@ -1,42 +1,203 @@
+import pyaudio
 import librosa, librosa.display
 import numpy as np
-import matplotlib.pyplot as plt
-from IPython.display import Audio
 import scipy
 import sounddevice as sd
 from playsound import playsound
 import time
 from NMF_Function import myNMF
 
+# constants
+CHUNK = 256                  # samples per frame
+FORMAT = pyaudio.paInt16     # audio format (bytes per sample?)
+CHANNELS = 1                 # single channel for microphone
+RATE = 44100                 # samples per second
+RECORD_SEC = 2
+
+# pyaudio class instance
+p = pyaudio.PyAudio()
+
+# initialize stream object
+stream = p.open(
+    format=FORMAT,
+    channels=CHANNELS,
+    rate=RATE,
+    input=True,
+    output=True,
+    frames_per_buffer=CHUNK
+)
+
+## KICK
+frames = [] # A python-list of chunks(numpy.ndarray)
+while True:
+
+    print('~~~~~~~~~~~~~~~~~~~~')
+    print('Press Enter to begin recording Kick')
+    input()
+
+    # playsound('record_start.wav')
+    time.sleep(.5)
+
+    for _ in range(0, int(RATE / CHUNK * RECORD_SEC)):
+        data = stream.read(CHUNK, exception_on_overflow = False)
+        frames.append(np.fromstring(data, dtype=np.int16))
+
+    
+
+    #Convert the list of numpy-arrays into a 1D array (column-wise)
+    kick = np.hstack(frames)
+
+    print('Playing back...')
+    time.sleep(1)
+    sd.play(kick, RATE)
+    time.sleep(RECORD_SEC)
+    sd.stop()
+
+    print('Is this good? (Y/N)')
+    check = input("Is this good? (Y/N)")
+    if check == 'Y':
+        print('\n')
+        print('Kick recorded!')
+        print('Press Enter to move onto Snare')
+        print('~~~~~~~~~~~~~~~~~~~~')
+        input()
+        
+        break
+    else:
+        frames = []
+        print('\n\n')
+        continue
+
+
+## SNARE
+frames = [] # A python-list of chunks(numpy.ndarray)
+while True:
+
+    print('~~~~~~~~~~~~~~~~~~~~')
+    print('Press Enter to begin recording Snare')
+    input()
+
+    # playsound('record_start.wav')
+    time.sleep(.5)
+
+    for _ in range(0, int(RATE / CHUNK * RECORD_SEC)):
+        data = stream.read(CHUNK, exception_on_overflow = False)
+        frames.append(np.fromstring(data, dtype=np.int16))
+
+    
+
+    #Convert the list of numpy-arrays into a 1D array (column-wise)
+    snare = np.hstack(frames)
+
+    print('Playing back...')
+    time.sleep(1)
+    sd.play(snare, RATE)
+    time.sleep(RECORD_SEC)
+    sd.stop()
+
+    print('Is this good? (Y/N)')
+    check = input("Is this good? (Y/N)")
+    if check == 'Y':
+        print('\n')
+        print('Snare recorded!')
+        print('Press Enter to move onto Hihat')
+        print('~~~~~~~~~~~~~~~~~~~~')
+        input()
+        
+        break
+    else:
+        frames = []
+        print('\n\n')
+        continue
 
 
 
-# Training Speech dictionary
-x, sr = librosa.load("sounds.wav", sr=None) # Loading in audio file
+## HIHAT
+frames = [] # A python-list of chunks(numpy.ndarray)
+while True:
+
+    print('~~~~~~~~~~~~~~~~~~~~')
+    print('Press Enter to begin recording Hihat')
+    input()
+
+    # playsound('record_start.wav')
+    time.sleep(.5)
+
+    for _ in range(0, int(RATE / CHUNK * RECORD_SEC)):
+        data = stream.read(CHUNK, exception_on_overflow = False)
+        frames.append(np.fromstring(data, dtype=np.int16))
+
+
+    #Convert the list of numpy-arrays into a 1D array (column-wise)
+    hihat = np.hstack(frames)
+
+    print('Playing back...')
+    time.sleep(1)
+    sd.play(hihat, RATE)
+    time.sleep(RECORD_SEC)
+    sd.stop()
+
+    print('Is this good? (Y/N)')
+    check = input("Is this good? (Y/N)")
+    if check == 'Y':
+        print('\n')
+        print('Hihat recorded!')
+        print('Press Enter to complete recording')
+        print('~~~~~~~~~~~~~~~~~~~~')
+        input()
+        
+        break
+    else:
+        frames = []
+        print('\n\n')
+        continue
+
+print('Recording Done')
+
+# close stream
+stream.stop_stream()
+stream.close()
+
+p.terminate()
+
+
+components = [snare,kick,hihat] # Array of Component Recordings
+
+
+# STFT Parameters
+fftlen = 1024
+hopsize = 256
+
+# Training the dictionary components
 print("Training Dictionary")
 
-# Calculating the spectrogram of the audio file
-S = librosa.stft(x,hop_length=256,win_length=1024, window='hamming', n_fft=1024)
-S_mag, S_phase = librosa.magphase(S)
-S_db = librosa.amplitude_to_db(S_mag)
+W = np.zeros((513,3)) # Dictionary Matrix
 
-# NMF Parameters
-r = 3
-nIter = 75
+for comp in range(3):
+    
+    x = components[comp] # Load specific component audio
 
-[W_Speech,H,KL] = myNMF(S_mag,r,nIter)
+    # Calculate the spectrogram
+    S = librosa.stft(x,hop_length=hopsize,win_length=fftlen, window='hamming', n_fft=fftlen)
+    S_mag, S_phase = librosa.magphase(S)
+    S_db = librosa.amplitude_to_db(S_mag)
 
-Y_Speech = np.dot(W_Speech,H) # Reconstructed Spectrogram
+    # NMF Parameters
+    r = 1
+    nIter = 75
 
-print(" Dictionary Trained ")
+    [W_temp,H,KL] = myNMF(S_mag,r,nIter) # Process the Dictionary Matrix
+    W[:,comp] = W_temp[:,0]
+
+    print(f'Component {comp} Trained')
 
 
 
 # Loading in Test Audio File
-x, sr = librosa.load("beatboxtest.wav", sr=None) # Loading in audio file
+x, sr = librosa.load("joetest.wav", sr=None) # Loading in audio file
 
 # Calculating the spectrogram of the audio file
-S = librosa.stft(x,hop_length=256,win_length=1024, window='hamming', n_fft=1024)
+S = librosa.stft(x,hop_length=hopsize,win_length=fftlen, window='hamming', n_fft=fftlen)
 S_mag, S_phase = librosa.magphase(S)
 S_db = librosa.amplitude_to_db(S_mag)
 
@@ -44,33 +205,36 @@ S_db = librosa.amplitude_to_db(S_mag)
 r = 3
 nIter = 75
 
-[W_Combo,H,KL] = myNMF(S_mag,r,nIter,bUpdateW=0,initW=W_Speech)
+[_,H,KL] = myNMF(S_mag,r,nIter,bUpdateW=0,initW=W) # Processing the audio file
 print("NMF Completed")
 
 
-numframes = np.floor(x.size/256).astype(int)
+numframes = np.floor(x.size/hopsize).astype(int) # calculating the number of total frames
 
-
-
-localmax = np.zeros((3,100), dtype= int)
+localmax = np.zeros((3,100), dtype= int) # Variable for the local maxima of each component's activation matrix
 
 for n in range(r):
 
-    H[n,:] *= 1.0 / (H[n,:].max())
-    maxima, _ = scipy.signal.find_peaks(H[n,:], height=0.2, distance=18)
+    H[n,:] *= 1.0 / (H[n,:].max()) # Normalization
+
+    maxima, _ = scipy.signal.find_peaks(H[n,:], height=0.2, distance=18) # Finding local maxima
     localmax[n, 0:len(maxima)] = maxima
     
-
+# Organizing and sorting local maxima into one array
 maximas = np.concatenate([localmax[0],localmax[1],localmax[2]])
 maximas = maximas[maximas != 0]
 maximas = np.sort(maximas)
 
-
+# Detecting and processing duplicate or false maxima detection
 for i in range(0,len(maximas)-1):
-    if(maximas[i+1] <= maximas[i] + 10):
+
+    # If any successive maxima are within a certain distance
+    if(maximas[i+1] <= maximas[i] + 10): 
+
         idx1 = np.where(localmax == maximas[i])[0][0]
         idx2 = np.where(localmax == maximas[i+1])[0][0]
 
+        # Check which maxima has a higher magnitude and delete the other false maxima
         if(H[idx1,maximas[i]] > H[idx2,maximas[i+1]]):
             localmax[idx2, np.where(localmax[idx2] == maximas[i+1])[0]] = 0
         else:
@@ -78,17 +242,16 @@ for i in range(0,len(maximas)-1):
 
 
 
+# Arrays for finding final triggers
 triggers = np.zeros((3,numframes),dtype=int)
-temps = np.zeros((3,100), dtype= int)
-
+temps = np.zeros((3,100), dtype= int) 
 
 for n in range(r):
 
-    max = localmax[n][localmax[n] != 0]
-    temps[n, 0:len(max)] = max
-    H[n,:] *= 1.0 / (H[n,:].max())
+    max = localmax[n][localmax[n] != 0] # Find all maxima not equal to 0
+    temps[n, 0:len(max)] = max # Load into temp array
 
-    for i in range(numframes):
+    for i in range(numframes): # Set impulse at maxima location
         if(i in max):
             triggers[n,i] = 1
 
@@ -99,31 +262,30 @@ hihat, _ = librosa.load("Heel Flip Hat.wav", sr=None) # Loading in audio file
 
 
 
-test = np.zeros((3,len(triggers[0]) + (len(triggers[0])-1)*(255)))
+triggers_interp = np.zeros((3,len(triggers[0]) + (len(triggers[0])-1)*(255))) # Reconstructing the output through interpolation
 for n in range(3):
-    test[n][::256] = triggers[n]
+    triggers_interp[n][::256] = triggers[n]
 
+out = np.zeros(len(triggers_interp[0]) + RATE * RECORD_SEC) # Output with a buffer at the end for audio recording
 
-out = np.zeros(len(test[0])+93000)
-
-for samp in range(len(test[0])):
-    if(test[0,samp] == 1):
+# Check for trigger and load corresponding audio sample
+for samp in range(len(triggers_interp[0])):
+    if(triggers_interp[2,samp] == 1):
         out[samp:len(snare)+samp] = snare
-    elif(test[1,samp] == 1):
+    elif(triggers_interp[0,samp] == 1):
         out[samp:len(kick)+samp] = kick
-    elif(test[2,samp] == 1):
+    elif(triggers_interp[1,samp] == 1):
         out[samp:len(hihat)+samp] = hihat
 
-if(x.size < out.size):
+if(x.size < out.size): # Match lengths of audio signals
     out = out[0:len(x)]
 
 print("Playing Audio")
 
-while True:
+while True: # Play output 
     
-    
-    sd.play(out, 44100)
-    time.sleep(len(out)/48000)
+    sd.play(out+x, RATE)
+    time.sleep(len(out)/RATE)
     sd.stop()
 
     check = input("Is this good? (Y/N)")
